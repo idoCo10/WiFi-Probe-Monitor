@@ -14,9 +14,9 @@ It shows devices, their vendors (via OUI), SSIDs they probe for, and highlights 
 
 ## Requirements
 
-- Kali Linux
-- `tshark` (the script can auto-install it if missing)
-- Wi-Fi adapter in monitor mode (script can switch it automatically)
+- Debian based Linux (Kali, Ubuntu..)
+- `tshark` (the script will auto-install it if missing)
+- Wi-Fi adapter in monitor mode (script will switch it automatically)
 
 ## Installation
 
