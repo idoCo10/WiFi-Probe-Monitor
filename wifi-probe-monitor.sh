@@ -1,24 +1,22 @@
 #!/usr/bin/env bash
-
-# version: 1.0, 8/11/2025 20:10
+# version: 1.2, 11/11/2025
 
 UN=${SUDO_USER:-$(whoami)}
 targets_path="/home/$UN/Desktop"
 OUI_FILE="$targets_path/oui.txt"
 
-declare -A device_ssids        # SSIDs per device (space-separated list of SSID)
+declare -A device_ssids        # APs per device (array-like string separated by ||)
 declare -A device_macs         # Vendor per device
-declare -A device_first_seen    # First seen timestamp per device
-declare -A vendor_cache         # OUI cache
-declare -A missing_devices      # devices with missing/wildcard probes
-declare -A missing_first_seen   # first seen time for missing devices
+declare -A device_first_seen   # First seen timestamp per device
+declare -A vendor_cache        # OUI cache
+declare -A missing_devices     # devices with missing/wildcard probes
+declare -A missing_first_seen  # first seen time for missing devices
 
 # Colors
 RED=$'\033[1;31m'
 GREEN=$'\033[1;32m'
 ORANGE=$'\033[1;33m'
 BLUE=$'\033[1;34m'
-PURPLE=$'\033[1;35m'
 CYAN=$'\033[1;36m'
 RESET=$'\033[0m'
 BOLD=$'\033[1m'
@@ -62,22 +60,19 @@ adapter_config() {
         airmon-ng start "$wifi_adapter" > /dev/null 2>&1
         adapters=($(iw dev | awk '$1=="Interface"{print $2}'))
         for adapter in "${adapters[@]}"; do
-            if [[ "$adapter" == *"mon" ]]; then
-                wifi_adapter="$adapter"
-                break
-            fi
+            [[ "$adapter" == *"mon" ]] && wifi_adapter="$adapter"
         done
     fi
 }
 
 normalize_mac() {
-    echo "$1" | tr '[:upper:]' '[:lower:]' | sed 's/[-\.]/:/g'
+    echo "$1" | tr '[:lower:]' '[:upper:]' | sed 's/[-\.]/:/g'
 }
 
 get_vendor() {
     local mac="$1"
     [[ -n "${vendor_cache[$mac]}" ]] && echo "${vendor_cache[$mac]}" && return
-    local prefix=$(echo "$mac" | cut -d':' -f1-3 | tr '[:lower:]' '[:upper:]')
+    local prefix=$(echo "$mac" | cut -d':' -f1-3)
     local vendor=$(grep -i "^$prefix " "$OUI_FILE" | awk '{$1=""; print substr($0,2)}')
     vendor="${vendor:-Unknown OUI}"
     vendor_cache[$mac]="$vendor"
@@ -97,64 +92,84 @@ decode_ssid_if_hex() {
 install_tshark() {
     if ! command -v tshark >/dev/null 2>&1; then
         echo "tshark not found. Installing..."
-        sudo apt update && sudo apt install -y tshark
+        apt update && apt install -y tshark
     fi
 }
-
 
 check_oui
 install_tshark
 adapter_config
-
 
 tshark -i "$wifi_adapter" -Y "wlan.fc.type_subtype == 4" -T fields -e frame.time -e wlan.sa -e wlan.ta -e wlan.ssid -l 2>/dev/null \
 | while IFS=$'\t' read -r time sa ta ssid_raw; do
     time=$(echo "$time" | grep -oP '\d{2}:\d{2}:\d{2}')
     sa=$(normalize_mac "$sa")
     ssid_decoded=$(decode_ssid_if_hex "$ssid_raw")
-    ssid_decoded="${ssid_decoded:-<MISSING>}"
+    ssid_decoded=$(echo "$ssid_decoded" | xargs)  # trim spaces
+
+    # Treat empty or null SSIDs as missing
+    [[ -z "$ssid_decoded" ]] && ssid_decoded="<MISSING>"
 
     vendor=$(get_vendor "$sa")
 
     if [[ "$ssid_decoded" == "<MISSING>" ]]; then
-        [[ -z "${device_ssids[$sa]:-}" ]] && missing_devices["$sa"]="$vendor" && [[ -z "${missing_first_seen[$sa]:-}" ]] && missing_first_seen[$sa]="$time"
+        # Only mark as missing if device has no valid APs
+        valid_aps="${device_ssids[$sa]//||/ }"
+        valid_aps=$(echo "$valid_aps" | tr -s ' ' | sed 's/  */ /g')
+        has_valid=0
+        for ap in $valid_aps; do
+            [[ -n "$ap" && "$ap" != "1" ]] && has_valid=1 && break
+        done
+        [[ $has_valid -eq 0 ]] && missing_devices["$sa"]="$vendor" && [[ -z "${missing_first_seen[$sa]:-}" ]] && missing_first_seen[$sa]="$time"
     else
-        existing="${device_ssids[$sa]}"
-        if [[ ! " $existing " =~ " $ssid_decoded " ]]; then
-            device_ssids["$sa"]+="$ssid_decoded "
+        [[ "$ssid_decoded" == "1" ]] && continue  # skip router APs
+
+        if [[ -z "${device_ssids[$sa]+_}" ]]; then
+            device_ssids["$sa"]="$ssid_decoded"
+        else
+            IFS='||' read -ra existing_array <<< "${device_ssids[$sa]}"
+            skip=0
+            for ex in "${existing_array[@]}"; do
+                [[ "$ex" == "$ssid_decoded" ]] && skip=1 && break
+            done
+            [[ $skip -eq 0 ]] && device_ssids["$sa"]+="||$ssid_decoded"
         fi
         device_macs["$sa"]="$vendor"
-        [[ -z "${device_first_seen[$sa]:-}" ]] && device_first_seen[$sa]="$time"
+        [[ -z "${device_first_seen[$sa]:-}" ]] && device_first_seen["$sa"]="$time"
         unset missing_devices["$sa"]
         unset missing_first_seen["$sa"]
     fi
 
+    # Display
     clear
     echo -e "${BOLD}=== Probe Requests Live ===${RESET}"
 
-    for dev in $(for d in "${!device_ssids[@]}"; do
-                    count=$(echo "${device_ssids[$d]}" | wc -w)
-                    echo "$count $d"
-                done | sort -nr | awk '{print $2}'); do
+    # Sort devices by first-seen time (oldest first)
+    for dev in $(for d in "${!device_first_seen[@]}"; do
+                    echo "${device_first_seen[$d]} $d"
+                done | sort | awk '{print $2}'); do
         vendor="${device_macs[$dev]}"
         first_seen="${device_first_seen[$dev]}"
         echo
         echo -e "${CYAN}[$first_seen]${RESET}   ${GREEN}$dev${RESET}   |   ${ORANGE}$vendor${RESET}"
 
         count=1
-        for ssid in ${device_ssids[$dev]}; do
-            printf "             + ${BLUE}AP%d:${RESET} %s\n" "$count" "$ssid"
+        IFS='||' read -ra aps <<< "${device_ssids[$dev]}"
+        for ap in "${aps[@]}"; do
+            [[ -n "$ap" && "$ap" != "1" ]] || continue
+            printf "             + ${BLUE}AP %d:${RESET} %s\n" "$count" "$ap"
             ((count++))
         done
     done
 
+    # Missing/open devices
     if [ ${#missing_devices[@]} -gt 0 ]; then
         echo
         echo -e "${RED}Devices open for any AP:${RESET}"
-        for mac in "${!missing_devices[@]}"; do
+        for mac in $(for m in "${!missing_devices[@]}"; do echo "${missing_first_seen[$m]} $m"; done | sort | awk '{print $2}'); do
             [[ -n "${device_ssids[$mac]:-}" ]] && continue
             first_seen="${missing_first_seen[$mac]}"
-            printf "${CYAN}%s${RESET}   ${GREEN}%s${RESET}   |   ${ORANGE}%s${RESET}\n" "[$first_seen]" "$mac" "${missing_devices[$mac]}"
+            printf "${CYAN}[%s]${RESET}   ${GREEN}%s${RESET}   |   ${ORANGE}%s${RESET}\n" "$first_seen" "$mac" "${missing_devices[$mac]}"
         done
     fi
 done
