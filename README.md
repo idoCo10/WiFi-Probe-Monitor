@@ -18,6 +18,9 @@ It shows devices, their vendors (via OUI), SSIDs they probe for, and highlights 
 - `tshark` (the script will auto-install it if missing)
 - Wi-Fi adapter in monitor mode (script will switch it automatically)
 
+![Probe Scan](probe_scan.png)
+
+
 ## Installation
 
 1. Clone this repository:
