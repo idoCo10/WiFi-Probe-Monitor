@@ -30,7 +30,7 @@ fi
 check_oui() {
     if [ ! -f "$OUI_FILE" ]; then
         echo "${ORANGE}Downloading OUI vendor file...${RESET}"
-        wget -q https://raw.githubusercontent.com/idoCo10/OUI-list-2025/main/oui.txt -O "$OUI_FILE"
+        wget -q https://raw.githubusercontent.com/idoCo10/OUI-list/main/oui.txt -O "$OUI_FILE"
         [[ ! -f "$OUI_FILE" ]] && { echo "${RED}Failed to download OUI vendor file.${RESET}"; exit 1; }
     fi
 }
