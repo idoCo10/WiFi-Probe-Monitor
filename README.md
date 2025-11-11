@@ -3,15 +3,14 @@
 A Bash script for Kali Linux to capture live Wi-Fi probe requests of Devices around you and display them in an organized way.  
 It shows devices, their vendors (via OUI), AP names they probe for, Counter to display how many probe requests made for each.
 The script also attempt to get the APs details (using Airodump-ng) like BSSID, Encryption, Channel and Power.
-We can also see devices that are open to any network (<MISSING> probe).
+We can also see devices that are open to any network (wildcard probe).
 
 ## Features
 
-- Capture live Wi-Fi probe requests using `tshark`.
-- Display devices with their vendor name, first seen timestamp, and probed SSIDs.
+- Capture live Wi-Fi probe requests of devices using `tshark`.
+- Display devices with their vendor name, first seen timestamp, and probed SSIDs (with counter).
+- Attempt to get APs details using `Airodump-ng`.
 - Highlight devices open to any network.
-- Decode SSIDs from hex if needed.
-- Sort devices by the number of probed SSIDs.
 - Keeps track of missing probes (wildcard or unknown SSIDs).
 
 ## Requirements
