@@ -12,6 +12,7 @@ We can also see devices that are open to any network (wildcard probe).
 - Attempt to get APs details using `Airodump-ng`.
 - Highlight devices open to any network.
 - Keeps track of missing probes (wildcard or unknown SSIDs).
+- Clean background processes and temp files upon Ctrl+C.
 
 ## Requirements
 
