@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# version: 1.6, 12/11/2025 00:31 
+# version: 1.8, 13/11/2025 00:35 
 
 UN=${SUDO_USER:-$(whoami)}
 targets_path="/home/$UN/Desktop"
@@ -190,7 +190,7 @@ get_ap_details_background() {
         local airo_pid=$!
         
         local bssid="" channel="" encryption="" power=""
-        local max_attempts=120
+        local max_attempts=40
         local attempt=0
         
         while [ $attempt -lt $max_attempts ]; do
@@ -258,56 +258,52 @@ process_completed_scans() {
     done
 }
 
-# Display function
+
+# Display function (updated to include AP OUI/vendor)
 display_results() {
     clear
     echo -e "${BOLD}=== Probe Requests Live ===${RESET}"
-    
+
     # Sort devices by first-seen time (oldest first)
     for dev in $(for d in "${!device_first_seen[@]}"; do echo "${device_first_seen[$d]} $d"; done | sort | awk '{print $2}'); do
         vendor="${device_macs[$dev]}"
         first_seen="${device_first_seen[$dev]}"
         echo
-        echo -e "[$first_seen]  ${NEON_GREEN}${BOLD}$dev${RESET}       |  ${ORANGE}$vendor${RESET}"
+        #echo -e "[$first_seen]  ${NEON_GREEN}${BOLD}$dev${RESET}       |  ${ORANGE}$vendor${RESET}"
+        echo -e "${NEON_GREEN}${BOLD}$dev${RESET}  ${ORANGE}$vendor${RESET}"        
         count=1
         IFS='||' read -ra aps <<< "${device_ssids[$dev]}"
         for ap in "${aps[@]}"; do
             [[ -n "$ap" && "$ap" != "1" ]] || continue
-            
+
             key="${dev}_${ap}"
             hits="${device_ssid_counts[$key]:-1}"
-            
-            # Get AP details from cache - USE ORIGINAL WORKING FORMAT
-		if [[ -n "${ap_details_cache[$ap]}" ]]; then
-		    IFS='|' read -r ap_mac ap_encryption ap_channel ap_power <<< "${ap_details_cache[$ap]}"
-		    
-		    if [[ -n "$ap_mac$ap_encryption$ap_channel$ap_power" ]]; then
-			
-			printf "%13s+ ${RED}AP %d:${RESET}  ${BOLD}%-32s${RESET} ${NEON_PURPLE}${BOLD}(%s)${RESET}   ${CYAN}BSSID: ${RESET}%-17s  ${CYAN}Enc: ${RESET}%-8s  ${CYAN}Ch: ${RESET}%-3s  ${CYAN}Pwr: ${RESET}%-4s${RESET}\n" "" "$count" "$ap" "$hits" "$ap_mac" "$ap_encryption" "$ap_channel" "$ap_power"
 
-		    else
-			# AP details empty, print queued/scanning status instead
-			printf "%13s+ ${RED}AP %d:${RESET}  ${BOLD}%-32s${RESET} ${NEON_PURPLE}${BOLD}(%s)${RESET}\n" "" "$count" "$ap" "$hits"
-			#if [[ -n "${pending_ap_scans[$ap]}" ]]; then
-			#    printf " [scanning...]"
-			#fi
-			#printf "\n"
-		    fi
-		else
-		    # No cache yet
-		    printf "%13s+ ${RED}AP %d:${RESET}  ${BOLD}%-32s${RESET} ${NEON_PURPLE}${BOLD}(%s)${RESET}\n" "" "$count" "$ap" "$hits"
-		    #if [[ -n "${pending_ap_scans[$ap]}" ]]; then
-			#printf " [scanning...]"
-		    #else
-			#printf " [queued for scan]"
-		    #fi
-		    #printf "\n"
-		fi
+            # Get AP details from cache
+            if [[ -n "${ap_details_cache[$ap]}" ]]; then
+                IFS='|' read -r ap_mac ap_encryption ap_channel ap_power <<< "${ap_details_cache[$ap]}"
 
+                if [[ -n "$ap_mac$ap_encryption$ap_channel$ap_power" ]]; then
+                    # Normalize and lookup vendor/OUI for the AP BSSID
+                    ap_mac_norm="$(normalize_mac "$ap_mac")"
+                    ap_oui="$(get_vendor "$ap_mac_norm")"
+                    [[ -z "$ap_oui" ]] && ap_oui="Unknown"
+
+                    printf "%19s+ ${RED}AP %d:${RESET}  ${BOLD}%-20s${RESET} ${NEON_PURPLE}${BOLD}(%s)${RESET} \n %26s ${CYAN}BSSID: ${RESET}%-17s  ${CYAN}Enc: ${RESET}%-8s  \n %26s ${CYAN}Ch: ${RESET}%-3s ${CYAN}Pwr: ${RESET}%-4s  ${CYAN}OUI: ${RESET}%s\n" \
+                        "" "$count" "$ap" "$hits" "" "$ap_mac" "$ap_encryption" "" "$ap_channel" "$ap_power" "$ap_oui"
+
+                else
+                    # AP details empty, print queued/scanning status instead
+                    printf "%19s+ ${RED}AP %d:${RESET}  ${BOLD}%-20s${RESET} ${NEON_PURPLE}${BOLD}(%s)${RESET}\n" "" "$count" "$ap" "$hits"
+                fi
+            else
+                # No cache yet
+                printf "%19s+ ${RED}AP %d:${RESET}  ${BOLD}%-20s${RESET} ${NEON_PURPLE}${BOLD}(%s)${RESET}\n" "" "$count" "$ap" "$hits"
+            fi
             ((count++))
         done
     done
-    
+
     # Missing/open devices
     if [ ${#missing_devices[@]} -gt 0 ]; then
         echo
@@ -316,19 +312,15 @@ display_results() {
             [[ -n "${device_ssids[$mac]:-}" ]] && continue
             first_seen="${missing_first_seen[$mac]}"
             hits="${missing_counts[$mac]:-1}"
-            #printf "[%s]  ${NEON_GREEN}${BOLD}%s${RESET}  ${NEON_PURPLE}${BOLD}(${hits})${RESET}  |  ${ORANGE}%s${RESET}\n" "$first_seen" "$mac" "${missing_devices[$mac]}"
-            #printf "[%s]  ${NEON_GREEN}${BOLD}%-23s${RESET}  |  ${ORANGE}%s${RESET}\n" "$first_seen" "$mac  ($hits)" "${missing_devices[$mac]}"
-            printf "[%s]  ${NEON_GREEN}${BOLD}%-17s${RESET}  ${NEON_PURPLE}${BOLD}(%s)${RESET}  |  ${ORANGE}%s${RESET}\n" "$first_seen" "$mac" "$hits" "${missing_devices[$mac]}"
+            #printf "[%s]  ${NEON_GREEN}${BOLD}%-17s${RESET}  ${NEON_PURPLE}${BOLD}(%s)${RESET}  |  ${ORANGE}%s${RESET}\n" "$first_seen" "$mac" "$hits" "${missing_devices[$mac]}"
+            printf "${NEON_GREEN}${BOLD}%-17s${RESET}  ${NEON_PURPLE}${BOLD}(%s)${RESET}  ${ORANGE}%s${RESET}\n" "$mac" "$hits" "${missing_devices[$mac]}"
         done
     fi
-    
+
     # Show scanning status
     local scanning_count=${#pending_ap_scans[@]}
-    #if [ $scanning_count -gt 0 ]; then
-    #    echo
-    #    echo -e "${BLUE}Background scanning ${scanning_count} AP(s)...${RESET}"
-    #fi
 }
+
 
 # Main execution
 check_oui
