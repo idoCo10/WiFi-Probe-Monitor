@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# version: 1.9, 29/11/2025 02:21 
+# version: 1.9, 29/11/2025 02:44 
 
 
 UN=${SUDO_USER:-$(whoami)}
@@ -348,9 +348,26 @@ display_results() {
     fi
     
     # Display header with AP details
-    printf "${BOLD}%-3s %-18s %-45s %-8s %-8s %-30s %-18s %-10s %-9s %-11s %-30s${RESET}\n" \
-        "#" "Device" "Device OUI" "Power" "Probes" "AP Name" "MAC" "AP power" "Channel" "Encryption" "AP vendor OUI"
-    echo "-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------"
+    printf "${BOLD}%-3s %-18s %-43s %-8s %-8s %-28s %-18s %-10s %-9s %-11s %-30s${RESET}\n" \
+        "#" "Device" "Device OUI" "Power" "Probes" "AP Name" "MAC" "AP power" "Channel" "Encryption" "AP OUI"
+    echo "-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------"
+    
+    # Define color array for multiple AP devices
+    local multi_ap_colors=("${NEON_GREEN}" "${NEON_PURPLE}" "${CYAN}" "${ORANGE}" "${RED}" "${BLUE}" "${NEON_YELLOW}")
+    
+    # Create an associative array to track colors for each multi-AP device
+    declare -A device_colors
+    local color_index=0
+    
+    # First pass: assign colors to devices with multiple APs
+    for dev in "${!device_first_seen[@]}"; do
+        IFS='||' read -ra aps <<< "${device_ssids[$dev]}"
+        local ap_count=${#aps[@]}
+        if [[ $ap_count -gt 1 ]]; then
+            device_colors["$dev"]="${multi_ap_colors[$color_index]}"
+            color_index=$(( (color_index + 1) % ${#multi_ap_colors[@]} ))
+        fi
+    done
     
     # Sort devices by first-seen time (oldest first) and display with numbers
     local count=1
@@ -359,9 +376,13 @@ display_results() {
         power="${device_power[$dev]:--}"
         
         IFS='||' read -ra aps <<< "${device_ssids[$dev]}"
-        
-        # Check if device probes for multiple APs
         local ap_count=${#aps[@]}
+        
+        # Get color for this device (if it has multiple APs)
+        local device_color=""
+        if [[ $ap_count -gt 1 ]]; then
+            device_color="${device_colors[$dev]}"
+        fi
         
         for ap in "${aps[@]}"; do
             [[ -n "$ap" && "$ap" != "1" ]] || continue
@@ -385,12 +406,12 @@ display_results() {
             [[ -z "$ap_encryption" ]] && ap_encryption=""
             [[ -z "$ap_vendor" ]] && ap_vendor=""
             
-            # Color the device MAC in green only if it probes for multiple APs
-            if [[ $ap_count -gt 1 ]]; then
-                printf "%-3s ${NEON_GREEN}%-18s${RESET} %-45s %-8s %-8s %-30s %-18s %-10s %-9s %-11s %-30s\n" \
+            # Color the device MAC based on whether it probes for multiple APs
+            if [[ -n "$device_color" ]]; then
+                printf "%-3s ${device_color}%-18s${RESET} %-43s %-8s %-8s %-28s %-18s %-10s %-9s %-11s %-30s\n" \
                     "${count})" "$dev" "$vendor" "$power" "$probe_count" "$ap" "$ap_mac" "$ap_power" "$ap_channel" "$ap_encryption" "$ap_vendor"
             else
-                printf "%-3s %-18s %-45s %-8s %-8s %-30s %-18s %-10s %-9s %-11s %-30s\n" \
+                printf "%-3s %-18s %-43s %-8s %-8s %-28s %-18s %-10s %-9s %-11s %-30s\n" \
                     "${count})" "$dev" "$vendor" "$power" "$probe_count" "$ap" "$ap_mac" "$ap_power" "$ap_channel" "$ap_encryption" "$ap_vendor"
             fi
             
@@ -400,7 +421,6 @@ display_results() {
     
     echo -e "\n\n${CYAN}Press Ctrl+C to stop the scan${RESET}"
 }
-
 # Function to get AP details from airodump file
 get_ap_details() {
     local ap_essid="$1"
