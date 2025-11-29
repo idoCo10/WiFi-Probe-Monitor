@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# version: 2.0, 29/11/2025 04:23
+# version: 2.1, 29/11/2025 17:46
 
-# Fix dnsmasq shifting spaces..
 # ADD Deauth attack
+# Accept any wpa2 handshake ? trick
 
 
 UN=${SUDO_USER:-$(whoami)}
@@ -21,25 +21,22 @@ declare -A ap_details_cache # Cache for AP details (MAC, encryption, channel, po
 declare -A device_power # Power level per device
 
 # Colors
-RED=$'\033[1;31m'
-GREEN=$'\033[1;32m'
-ORANGE=$'\033[1;33m'
-BLUE=$'\033[1;34m'
-CYAN=$'\033[1;36m'
-WHITE=$'\033[1;37m'
-NEON_YELLOW=$'\033[38;5;226m'
-NEON_GREEN=$'\033[38;5;82m'
-NEON_PURPLE=$'\033[38;5;201m'
-RESET=$'\033[0m'
-BOLD=$'\033[1m'
+RED="\033[1;31m"
+r_RED="\033[31m"
+GREEN="\033[1;32m"
+r_GREEN="\033[32m"
+BLUE="\033[1;34m"
+r_BLUE="\033[34m"
+YELLOW="\033[33m"  
+ORANGE="\033[1;33m"
+CYAN="\033[1;36m"
+WHITE="\033[1;37m"
+NEON_YELLOW="\033[38;5;226m"
+NEON_GREEN="\033[38;5;82m"
+NEON_PURPLE="\033[38;5;201m"
+RESET="\033[0m"
+BOLD="\033[1m"
 
-GREEN_rap="\e[32m"
-RED_rap="\e[31m"
-YELLOW_rap="\e[33m"  
-BLUE_rap="\e[34m"
-ORANGE_rap=$'\033[1;33m'
-MAGENTA_rap='\033[0;35m'
-RESET_rap="\e[0m"  # No Color
 
 # Global variables for cleanup
 WIFI_ADAPTER=""
@@ -60,7 +57,7 @@ DHCP_RANGE_END="192.168.50.20"
 
 # Check if the script is run as root
 if [ "$EUID" -ne 0 ]; then
-    echo -e "${RED_rap}Please run this script as root or with sudo.${RESET_rap}"
+    echo -e "${RED}Please run this script as root or with sudo.${RESET}"
     exit 1
 fi
 
@@ -73,7 +70,7 @@ rogue_ap_dependencies() {
     # Detect missing packages
     for pkg in "${DEPS[@]}"; do
         if ! dpkg -s "$pkg" >/dev/null 2>&1; then
-            echo -e "${RED_rap}[!] Missing: $pkg${RESET_rap}"
+            echo -e "${r_RED}[!] Missing: $pkg${RESET}"
             MISSING+=("$pkg")
         fi
     done
@@ -88,14 +85,14 @@ rogue_ap_dependencies() {
 
 rogue_ap_hardware_check() {
     if ! ip link show "$WIFI_ADAPTER" > /dev/null 2>&1; then
-        echo -e "${RED_rap}[!] Interface $WIFI_ADAPTER not found${RESET_rap}"
+        echo -e "${r_RED}[!] Interface $WIFI_ADAPTER not found${RESET}"
         return 1
     fi
 
     if iw list 2>/dev/null | grep -q "AP"; then
-        echo -e "${GREEN_rap}[✓] Interface supports AP mode${RESET_rap}"
+        echo -e "${r_GREEN}[✓] Interface supports AP mode${RESET}"
     else
-        echo -e "${RED_rap}[!] Interface may not support AP mode${RESET_rap}"
+        echo -e "${r_RED}[!] Interface may not support AP mode${RESET}"
         return 1
     fi
     return 0
@@ -203,22 +200,22 @@ rogue_ap_channel_check() {
 
     echo -e "[*] Channel information in $COUNTRY:"
     
-    echo -e "    ${GREEN_rap}[✓] Allowed channels:${RESET_rap}"
+    echo -e "    ${r_GREEN}[✓] Allowed channels:${RESET}"
     echo -e "        2.4GHz: $(format_channels allowed_24)"
     echo -e "        5GHz:   $(format_channels allowed_5)"
     echo -e "        6GHz:   $(format_channels allowed_6)"
 
-    echo -e "    ${YELLOW_rap}[!] DFS (radar detection) channels:${RESET_rap}"
+    echo -e "    ${YELLOW}[!] DFS (radar detection) channels:${RESET}"
     echo -e "        2.4GHz: $(format_channels dfs_24)"
     echo -e "        5GHz:   $(format_channels dfs_5)"
     echo -e "        6GHz:   $(format_channels dfs_6)"
 
-    echo -e "    ${RED_rap}[!] Disabled channels:${RESET_rap}"
+    echo -e "    ${r_RED}[!] Disabled channels:${RESET}"
     echo -e "        2.4GHz: $(format_channels disabled_24)"
     echo -e "        5GHz:   $(format_channels disabled_5)"
     echo -e "        6GHz:   $(format_channels disabled_6)"
 
-    echo -e "    ${BLUE_rap}[!] No IR channels:${RESET_rap}"
+    echo -e "    ${r_BLUE}[!] No IR channels:${RESET}"
     echo -e "        2.4GHz: $(format_channels noir_24)"
     echo -e "        5GHz:   $(format_channels noir_5)"
     echo -e "        6GHz:   $(format_channels noir_6)"
@@ -228,32 +225,32 @@ rogue_ap_channel_check() {
         echo -e "\n[*] Specified channel: $ROGUE_CHANNEL"
 
         if [[ -n "${disabled_24[$ROGUE_CHANNEL]}" || -n "${disabled_5[$ROGUE_CHANNEL]}" ]]; then
-            echo -e "${RED_rap}[!] ERROR: Channel $ROGUE_CHANNEL is DISABLED for $COUNTRY!${RESET_rap}"
+            echo -e "${r_RED}[!] ERROR: Channel $ROGUE_CHANNEL is DISABLED for $COUNTRY!${RESET}"
             return 1
         fi
 
         if [[ -n "${dfs_24[$ROGUE_CHANNEL]}" || -n "${dfs_5[$ROGUE_CHANNEL]}" ]]; then
-            echo -e "${RED_rap}[!] ERROR: Channel $ROGUE_CHANNEL has DFS (radar detection) restriction in $COUNTRY!${RESET_rap}"
+            echo -e "${r_RED}[!] ERROR: Channel $ROGUE_CHANNEL has DFS (radar detection) restriction in $COUNTRY!${RESET}"
             return 1
         fi
         
         if [[ -n "${noir_24[$ROGUE_CHANNEL]}" || -n "${noir_5[$ROGUE_CHANNEL]}" ]]; then
-            echo -e "${RED_rap}[!] ERROR: Channel $ROGUE_CHANNEL has No IR (cannot initiate AP) restriction in $COUNTRY!${RESET_rap}"
+            echo -e "${r_RED}[!] ERROR: Channel $ROGUE_CHANNEL has No IR (cannot initiate AP) restriction in $COUNTRY!${RESET}"
             return 1
         fi
 
         if [[ -z "${allowed_24[$ROGUE_CHANNEL]}" && -z "${allowed_5[$ROGUE_CHANNEL]}" ]]; then
-            echo -e "${RED_rap}[!] ERROR: Channel $ROGUE_CHANNEL is not in the allowed 2.4GHz or 5GHz channels for $COUNTRY!${RESET_rap}"
+            echo -e "${r_RED}[!] ERROR: Channel $ROGUE_CHANNEL is not in the allowed 2.4GHz or 5GHz channels for $COUNTRY!${RESET}"
             return 1
         fi
         
-        echo -e "${GREEN_rap}[✓] Channel $ROGUE_CHANNEL is allowed.${RESET_rap}\n"
+        echo -e "${r_GREEN}[✓] Channel $ROGUE_CHANNEL is allowed.${RESET}\n"
     else
         echo -e "\n[*] No channel specified, randomizing channel..."
         available_channels=("${!allowed_24[@]}" "${!allowed_5[@]}")
         available_channels=($(printf '%s\n' "${available_channels[@]}" | sort -n))
         ROGUE_CHANNEL="${available_channels[RANDOM % ${#available_channels[@]}]}"
-        echo -e "${GREEN_rap}[✓] Randomized channel selected: $ROGUE_CHANNEL${RESET_rap}"
+        echo -e "${r_GREEN}[✓] Randomized channel selected: $ROGUE_CHANNEL${RESET}"
     fi
     
     return 0
@@ -282,13 +279,10 @@ rogue_ap_set_mac() {
             rand_mac=$(ip link show "$iface" | awk '/link\/ether/ {print toupper($2)}')
         fi
 
-        local rand_vendor
-        rand_vendor=$(get_vendor "$rand_mac")
-
         sudo ip link set "$iface" up
 
         echo -e "      Permanent MAC:  $perm_mac   ($perm_vendor)"
-        echo -e "${GREEN_rap}    ✓ Randomized MAC: $rand_mac   ($rand_vendor)${RESET_rap}"
+        echo -e "${r_GREEN}    ✓ Randomized MAC: $rand_mac ${RESET}"
     else
         local mac="$ROGUE_AP_MAC"
         sudo ip link set "$iface" down
@@ -317,7 +311,7 @@ rogue_ap_cleanup() {
     sudo iw dev $WIFI_ADAPTER set type managed 2>/dev/null
     sudo ip link set $WIFI_ADAPTER up
     sudo systemctl start NetworkManager
-    echo -e "${GREEN_rap}[✓] Cleanup complete. Wi-Fi interface restored to normal mode.${RESET_rap}"
+    echo -e "${r_GREEN}[✓] Cleanup complete. Wi-Fi interface restored to normal mode.${RESET}"
 }
 
 # Client connection monitoring functions
@@ -355,7 +349,7 @@ rogue_ap_monitor_clients() {
     local LOG_FILE="$targets_path/AP_clients.log"
     touch $LOG_FILE
     declare -A CLIENTS
-
+    printf "\r\033[K"
     echo -e "[*] Waiting for clients to connect:\n\n"
 
     while true; do
@@ -370,10 +364,12 @@ rogue_ap_monitor_clients() {
                 NAME=$(echo "$DEVICE_INFO" | cut -d'|' -f2)
                 OUI=$(get_vendor "$MAC")
 
-                printf -v MSG "[%s] CONNECTED:    Name: %-9s | IP: %-13s | MAC: %17s | OUI: %s" \
+                printf "\r\033[K"
+
+                printf -v MSG "[%s] CONNECTED!      Name: %-9s | IP: %-13s | MAC: %17s | OUI: %s" \
                 "$TIMESTAMP" "$NAME" "$IP" "$MAC" "$OUI"
 
-                echo -e "${GREEN_rap}${MSG}${RESET_rap}"
+                echo -e "${GREEN}${MSG}${RESET}"
                 echo "$MSG" >> "$LOG_FILE"
                 CLIENTS[$MAC]=1
             fi
@@ -386,10 +382,12 @@ rogue_ap_monitor_clients() {
                 NAME=$(get_client_name "$MAC")
                 OUI=$(get_vendor "$MAC")
 
-                printf -v MSG "[%s] DISCONNECTED: Name: %-9s | IP: %-13s | MAC: %17s | OUI: %s" \
+                printf "\r\033[K"
+
+                printf -v MSG "[%s] DISCONNECTED!      Name: %-9s | IP: %-13s | MAC: %17s | OUI: %s" \
                 "$TIMESTAMP" "$NAME" "$IP" "$MAC" "$OUI"
 
-                echo -e "${RED_rap}${MSG}${RESET_rap}"
+                echo -e "${RED}${MSG}${RESET}\n"
                 echo "$MSG" >> "$LOG_FILE"
                 unset CLIENTS[$MAC]
             fi
@@ -400,7 +398,7 @@ rogue_ap_monitor_clients() {
 }
 
 rogue_ap() {
-    echo -e "\n${NEON_GREEN}=== Starting Rogue AP ===${RESET_rap}"
+    echo -e "\n${NEON_GREEN}=== Starting Rogue AP ===${RESET}"
     
     # Stop monitor mode first
     if [[ -n "$WIFI_ADAPTER" && "$WIFI_ADAPTER" == *"mon" ]]; then
@@ -413,7 +411,7 @@ rogue_ap() {
     rogue_ap_dependencies
 
     # Hardware check
-    rogue_ap_hardware_check || { echo -e "${RED_rap}[!] Hardware check failed. Exiting.${RESET_rap}"; return 1; }
+    rogue_ap_hardware_check || { echo -e "${r_RED}[!] Hardware check failed. Exiting.${RESET}"; return 1; }
     
     # Country and channel checks
     rogue_ap_country_check
@@ -468,7 +466,7 @@ vht_oper_centr_freq_seg0_idx=$CENTER_FREQ"
         IEEE80211N="ieee80211n=1"
         HT_CAPAB="[HT20]"
     else
-        echo -e "${RED_rap}[!] Invalid channel: $ROGUE_CHANNEL in your region: $COUNTRY.${RESET_rap}"
+        echo -e "${r_RED}[!] Invalid channel: $ROGUE_CHANNEL in your region: $COUNTRY.${RESET}"
         rogue_ap_cleanup
         return 1
     fi
@@ -509,8 +507,8 @@ EOF
             break
         fi
         if grep -qi -E "AP-DISABLED|error|invalid" /tmp/hostapd.log; then
-            echo -e "${RED_rap}[!] Hostapd failed to start.${RESET_rap}"
-            echo -e "${RED_rap}--- Hostapd log ---${RESET_rap}"
+            echo -e "${r_RED}[!] Hostapd failed to start.${RESET}"
+            echo -e "${r_RED}--- Hostapd log ---${RESET}"
             awk '{print "\t"$0}' /tmp/hostapd.log
             kill $HAPD_PID 2>/dev/null
             rogue_ap_cleanup
@@ -521,7 +519,7 @@ EOF
     done
 
     if ! grep -q "AP-ENABLED" /tmp/hostapd.log; then
-        echo -e "${RED_rap}[!] Hostapd did not start within $timeout seconds. Check /tmp/hostapd.log${RESET_rap}"
+        echo -e "${r_RED}[!] Hostapd did not start within $timeout seconds. Check /tmp/hostapd.log${RESET}"
         rogue_ap_cleanup
         return 1
     fi
@@ -542,16 +540,17 @@ EOF
     sudo iptables -A FORWARD -i $WIFI_ADAPTER -o $LAN_INTERFACE -j ACCEPT
     sudo sysctl -w net.ipv4.ip_forward=1 > /dev/null
     
-    #printf "\r\033[K"  # Clear line and return to beginning    
+    printf "\r\033[K"  # Clear line and return to beginning    
 
-    echo -e "\n${GREEN_rap}[✓] AP ${ORANGE_rap}'$ROGUE_SSID'${RESET_rap} ${GREEN_rap}started on Channel ${ORANGE_rap}'$ROGUE_CHANNEL'.${RESET_rap}"
+    echo -e "\n${r_GREEN}[✓] AP ${ORANGE}'$ROGUE_SSID'${RESET} ${r_GREEN}started on Channel ${ORANGE}'$ROGUE_CHANNEL'.${RESET}"
     
+    printf "\r\033[K"
     # Start client monitoring in background
     rogue_ap_monitor_clients &
     MONITOR_PID=$!
 
     # Wait for user to stop
-    echo -e "${CYAN}Press Ctrl+C to stop the Rogue AP...${RESET_rap}"
+    echo -e "\n\n${CYAN}Press Ctrl+C to stop the Rogue AP...${RESET}"
     while true; do
         sleep 1
     done
@@ -599,7 +598,7 @@ user_selection() {
     done
     
     if [[ -z "$selected_device" ]]; then
-        echo -e "${RED}Invalid row number. Please select a valid row from 1 to $((count-1)).${RESET}"
+        echo -e "\n${RED}Invalid row number. Please select a valid row from 1 to $((count-1)).${RESET}"
         return 1
     fi
     
@@ -663,7 +662,7 @@ display_selected_row() {
     
     case "$rogue_choice" in
         [Yy]*)
-            echo -e "${GREEN_rap}Starting rogue AP...${RESET}"
+            echo -e "${r_GREEN}Starting rogue AP...${RESET}"
             rogue_ap
             ;;
         [Nn]*)
@@ -686,7 +685,7 @@ cleanup() {
     echo -e "\n${RED}Interrupt received. Stopping scan...${RESET}"
     
     # Kill airodump-ng process
-    echo "Stopping airodump-ng process..."
+    #echo "Stopping airodump-ng process..."
     if [[ -n "$AIRODUMP_PID" ]]; then
         kill "$AIRODUMP_PID" >/dev/null 2>&1
     fi
@@ -716,7 +715,6 @@ cleanup() {
     echo "Restarting network services..."
     systemctl restart NetworkManager >/dev/null 2>&1 || service network-manager restart >/dev/null 2>&1
     rogue_ap_cleanup
-    #echo "${GREEN}Cleanup completed.${RESET}"
     exit 0
 }
 
@@ -800,7 +798,7 @@ install_dependencies() {
 }
 
 start_airodump_scan() {
-    echo "${ORANGE}Starting airodump-ng scan on $WIFI_ADAPTER...${RESET}"
+    echo -e "${ORANGE}Starting airodump-ng scan on $WIFI_ADAPTER...${RESET}"
     
     # Remove any existing airodump files
     rm -f "$AIRODUMP_FILE"* >/dev/null 2>&1
@@ -991,7 +989,7 @@ display_results() {
     echo "-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------"
     
     # Define color array for multiple AP devices
-    local multi_ap_colors=("${NEON_GREEN}" "${NEON_PURPLE}" "${CYAN}" "${ORANGE}" "${RED}" "${BLUE}" "${NEON_YELLOW}")
+    local multi_ap_colors=("${NEON_GREEN}" "${NEON_PURPLE}" "${CYAN}" "${ORANGE}" "${RED}" "${BLUE}" "${NEON_YELLOW}" "${r_RED}" "${r_BLUE}" "${YELLOW}" "${r_GREEN}")
     
     # Create an associative array to track colors for each multi-AP device
     declare -A device_colors
