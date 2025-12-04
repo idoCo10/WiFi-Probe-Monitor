@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# version: 2.1, 29/11/2025 17:46
+# version: 2.2, 04/12/2025 23:50
 
 # ADD Deauth attack
 # Accept any wpa2 handshake ? trick
@@ -658,20 +658,23 @@ display_selected_row() {
     echo
     
     # Ask user about rogue AP
-    read -p "Do you want to Rogue this AP? (Y/N): " rogue_choice
+    read -p "Do you want to Rogue this AP? (Y/n): " rogue_choice
     
-    case "$rogue_choice" in
-        [Yy]*)
-            echo -e "${r_GREEN}Starting rogue AP...${RESET}"
-            rogue_ap
-            ;;
-        [Nn]*)
-            echo -e "${ORANGE}Exiting without starting rogue AP.${RESET}"
-            ;;
-        *)
-            echo -e "${RED}Invalid choice. Exiting.${RESET}"
-            ;;
-    esac
+        # If user just presses Enter, default to "Y" (accept/yes)
+        rogue_choice="${rogue_choice:-Y}"
+        
+        case "$rogue_choice" in
+            [Yy]*|"")
+                echo -e "${r_GREEN}Starting rogue AP...${RESET}"
+                rogue_ap
+                ;;
+            [Nn]*)
+                echo -e "${ORANGE}Exiting without starting rogue AP.${RESET}"
+                ;;
+            *)
+                echo -e "${RED}Invalid choice. Exiting.${RESET}"
+                ;;
+        esac
 }
 
 # Enhanced cleanup function
@@ -984,8 +987,8 @@ display_results() {
     fi
     
     # Display header with AP details
-    printf "${BOLD}%-3s %-18s %-43s %-8s %-8s %-28s %-18s %-10s %-9s %-11s %-30s${RESET}\n" \
-        "#" "Device" "Device OUI" "Power" "Probes" "AP Name" "MAC" "AP power" "Channel" "Encryption" "AP OUI"
+    printf "${BOLD}%-3s %-18s %-44s %-8s %-8s %-28s %-18s %-10s %-9s %-11s %-30s${RESET}\n" \
+        "#" "Device" "Device OUI" "Power" "Probes" "AP Name" "AP MAC" "AP Power" "Channel" "Encryption" "AP OUI"
     echo "-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------"
     
     # Define color array for multiple AP devices
@@ -1044,10 +1047,10 @@ display_results() {
             
             # Color the device MAC based on whether it probes for multiple APs
             if [[ -n "$device_color" ]]; then
-                printf "%-3s ${device_color}%-18s${RESET} %-43s %-8s %-8s %-28s %-18s %-10s %-9s %-11s %-30s\n" \
+                printf "%-3s ${device_color}%-18s${RESET} %-44s %-8s %-8s %-28s %-18s %-10s %-9s %-11s %-30s\n" \
                     "${count})" "$dev" "$vendor" "$power" "$probe_count" "$ap" "$ap_mac" "$ap_power" "$ap_channel" "$ap_encryption" "$ap_vendor"
             else
-                printf "%-3s %-18s %-43s %-8s %-8s %-28s %-18s %-10s %-9s %-11s %-30s\n" \
+                printf "%-3s %-18s %-44s %-8s %-8s %-28s %-18s %-10s %-9s %-11s %-30s\n" \
                     "${count})" "$dev" "$vendor" "$power" "$probe_count" "$ap" "$ap_mac" "$ap_power" "$ap_channel" "$ap_encryption" "$ap_vendor"
             fi
             
